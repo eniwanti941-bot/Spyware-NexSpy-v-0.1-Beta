@@ -24,7 +24,6 @@ jobs:
         mkdir -p app/src/main/java/com/android/system
         mkdir -p app/src/main/res/values
         mkdir -p app/src/main/res/xml
-        mkdir -p gradle/wrapper
 
         cat > build.gradle << 'EOF'
         buildscript {
@@ -55,14 +54,6 @@ jobs:
         org.gradle.jvmargs=-Xmx2048m -Dfile.encoding=UTF-8
         android.useAndroidX=true
         kotlin.code.style=official
-        EOF
-
-        cat > gradle/wrapper/gradle-wrapper.properties << 'EOF'
-        distributionBase=GRADLE_USER_HOME
-        distributionPath=wrapper/dists
-        distributionUrl=https\://services.gradle.org/distributions/gradle-8.2-bin.zip
-        zipStoreBase=GRADLE_USER_HOME
-        zipStorePath=wrapper/dists
         EOF
 
         cat > app/build.gradle << 'EOF'
@@ -258,12 +249,18 @@ jobs:
         </resources>
         EOF
 
-    - name: Make gradlew executable and build
+    - name: Download Gradle 8.2 and Build
       run: |
-        # Download Gradle 8.2 (sesuai wrapper), generate gradlew, terus build
-        gradle wrapper --gradle-version 8.2
-        chmod +x gradlew
-        ./gradlew assembleDebug --no-daemon
+        # Hapus gradle bawaan (9.9.1) dan paksa pake 8.2
+        wget -q https://services.gradle.org/distributions/gradle-8.2-bin.zip -O gradle.zip
+        unzip -q gradle.zip
+        export PATH=$PWD/gradle-8.2/bin:$PATH
+        
+        # Cek versi (harusnya 8.2)
+        gradle -v
+        
+        # Build
+        gradle assembleDebug --no-daemon
 
     - name: Upload APK Artifact
       uses: actions/upload-artifact@v4
