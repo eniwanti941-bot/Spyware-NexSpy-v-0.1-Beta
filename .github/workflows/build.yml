@@ -271,4 +271,3 @@ jobs:
         name: Kotlin-SystemUpdate-APK
         path: app/build/outputs/apk/debug/*.apk
         if-no-files-found: error
-        
