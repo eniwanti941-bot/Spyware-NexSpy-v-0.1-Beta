@@ -20,16 +20,20 @@ jobs:
 
     - name: Setup Android SDK & Build APK
       run: |
-        # Membuat direktori project minimal agar gradle bisa compile
+        # Buat direktori struktur project Android
         mkdir -p app/src/main/res/layout
         mkdir -p app/src/main/res/drawable
         
-        # Buat AndroidManifest minimal
+        # Buat AndroidManifest.xml
         cat << 'EOF' > app/src/main/AndroidManifest.xml
         <manifest xmlns:android="http://schemas.android.com/apk/res/android"
-            package="com.example.lock">
-            <application android:label="System Lock">
-                <activity android:name=".MainActivity" android:exported="true">
+            package="com.example.lockscreen">
+            <application
+                android:label="System Lock"
+                android:theme="@style/Theme.AppCompat.NoActionBar">
+                <activity
+                    android:name=".MainActivity"
+                    android:exported="true">
                     <intent-filter>
                         <action android:name="android.intent.action.MAIN" />
                         <category android:name="android.intent.category.LAUNCHER" />
@@ -39,7 +43,7 @@ jobs:
         </manifest>
         EOF
 
-        # Buat build.gradle app
+        # Buat build.gradle app level
         cat << 'EOF' > app/build.gradle
         plugins {
             id 'com.android.application'
@@ -47,11 +51,15 @@ jobs:
         android {
             compileSdk 34
             defaultConfig {
-                applicationId "com.example.lock"
+                applicationId "com.example.lockscreen"
                 minSdk 21
                 targetSdk 34
                 versionCode 1
                 versionName "1.0"
+            }
+            compileOptions {
+                sourceCompatibility JavaVersion.VERSION_17
+                targetCompatibility JavaVersion.VERSION_17
             }
         }
         dependencies {
@@ -62,7 +70,7 @@ jobs:
         # Buat settings.gradle
         echo "include ':app'" > settings.gradle
 
-        # Buat build.gradle root
+        # Buat build.gradle root level
         cat << 'EOF' > build.gradle
         buildscript {
             repositories {
@@ -70,7 +78,7 @@ jobs:
                 mavenCentral()
             }
             dependencies {
-                classpath 'com.android.tools.build:gradle:8.1.0'
+                classpath 'com.android.tools.build:gradle:8.1.1'
             }
         }
         allprojects {
@@ -81,13 +89,10 @@ jobs:
         }
         EOF
 
-        # Inisialisasi gradle wrapper
-        gradle wrapper
-        chmod +x gradlew
-        ./gradlew assembleDebug
+        # Buat local.properties untuk mendefinisikan lokasi Android SDK otomatis
+        echo "sdk.dir=$ANDROID_HOME" > local.properties
 
-    - name: Upload APK Artifact
-      uses: actions/upload-artifact@v4
-      with:
-        name: app-debug
-        path: app/build/outputs/apk/debug/app-debug.apk
+        # Inisialisasi wrapper dan jalankan build assembleDebug
+        gradle wrapper --gradle-version 8.1.1
+        chmod +x gradlew
+        ./gradlew assembleDebug --stacktrace
