@@ -1,4 +1,4 @@
-name: Build Android APK with Embedded Layout
+name: Build Android APK
 
 on:
   push:
@@ -18,66 +18,73 @@ jobs:
         distribution: 'temurin'
         java-version: '17'
 
-    - name: Create Project Directory Structure & Layout File
+    - name: Setup Android SDK & Build APK
       run: |
+        # Membuat direktori project minimal agar gradle bisa compile
         mkdir -p app/src/main/res/layout
         mkdir -p app/src/main/res/drawable
         
-        # Menulis kode activity_main.xml secara otomatis saat build
-        cat << 'EOF' > app/src/main/res/layout/activity_main.xml
-        <?xml version="1.0" encoding="utf-8"?>
-        <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
-            android:layout_width="match_parent"
-            android:layout_height="match_parent"
-            android:background="#000000"
-            android:gravity="center"
-            android:orientation="vertical"
-            android:padding="24dp">
-
-            <!-- Logo Anonymous -->
-            <ImageView
-                android:id="@+id/imgLogo"
-                android:layout_width="150dp"
-                android:layout_height="150dp"
-                android:src="@drawable/anonymous_logo"
-                android:contentDescription="Anonymous Logo" />
-
-            <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="24dp"
-                android:text="SYSTEM LOCKED"
-                android:textColor="#FF0000"
-                android:textSize="24sp"
-                android:textStyle="bold" />
-
-            <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="12dp"
-                android:text="Masukkan kode sandi yang valid untuk memulihkan akses perangkat."
-                android:textColor="#FFFFFF"
-                android:textSize="14sp"
-                android:gravity="center" />
-
-        </LinearLayout>
+        # Buat AndroidManifest minimal
+        cat << 'EOF' > app/src/main/AndroidManifest.xml
+        <manifest xmlns:android="http://schemas.android.com/apk/res/android"
+            package="com.example.lock">
+            <application android:label="System Lock">
+                <activity android:name=".MainActivity" android:exported="true">
+                    <intent-filter>
+                        <action android:name="android.intent.action.MAIN" />
+                        <category android:name="android.intent.category.LAUNCHER" />
+                    </intent-filter>
+                </activity>
+            </application>
+        </manifest>
         EOF
 
-    - name: Grant execute permission for gradlew
-      run: |
-        if [ -f "gradlew" ]; then
-          chmod +x gradlew
-        else
-          echo "Gradle wrapper belum tersedia di root repository."
-        fi
+        # Buat build.gradle app
+        cat << 'EOF' > app/build.gradle
+        plugins {
+            id 'com.android.application'
+        }
+        android {
+            compileSdk 34
+            defaultConfig {
+                applicationId "com.example.lock"
+                minSdk 21
+                targetSdk 34
+                versionCode 1
+                versionName "1.0"
+            }
+        }
+        dependencies {
+            implementation 'androidx.appcompat:appcompat:1.6.1'
+        }
+        EOF
 
-    - name: Build Debug APK
-      run: |
-        if [ -f "gradlew" ]; then
-          ./gradlew assembleDebug
-        else
-          echo "Lewati build karena gradle wrapper belum diinisialisasi."
-        fi
+        # Buat settings.gradle
+        echo "include ':app'" > settings.gradle
+
+        # Buat build.gradle root
+        cat << 'EOF' > build.gradle
+        buildscript {
+            repositories {
+                google()
+                mavenCentral()
+            }
+            dependencies {
+                classpath 'com.android.tools.build:gradle:8.1.0'
+            }
+        }
+        allprojects {
+            repositories {
+                google()
+                mavenCentral()
+            }
+        }
+        EOF
+
+        # Inisialisasi gradle wrapper
+        gradle wrapper
+        chmod +x gradlew
+        ./gradlew assembleDebug
 
     - name: Upload APK Artifact
       uses: actions/upload-artifact@v4
